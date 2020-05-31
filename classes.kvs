@@ -41,9 +41,37 @@ class("pmsimportexport::wgtmain","widget")
 		return %success
 	}
 	
-	function exportSQLResults()
+	function importSQLResults()
 	{
 		
+		%inFile = @%leSourceFile->$text()
+		
+		if (%inFile != $null)
+		{
+			if ($file.exists(%inFile) == $true)
+			{
+				// dev-note: i use an array for the column names because when we get the results from the 
+				// database they come back in some random order. using an array lets us specify the 
+				// order of the columns. to alter the column names, edit the CSV string in the 
+				// wgtMain::constructor
+				%arrColNames = $str.split(",",@%o{strColNames})
+				
+			}
+			else
+			{
+				// dest file does not exist
+				dialog.message -b ("Failure", "Source file does not exist.<br/>Check file and try again.", 44) {}
+			}
+		}
+		else
+		{
+			// dest file string was empty
+			dialog.message -b ("Failure", "No source file is configured.<br/>Check settings and try again.", 44) {}
+		}
+	}
+	
+	function exportSQLResults()
+	{
 		%outFile = @%leDestFile->$text()
 		
 		if (%outFile != $null)
@@ -80,11 +108,13 @@ class("pmsimportexport::wgtmain","widget")
 			else
 			{
 				// dest file does not exist
+				dialog.message -b ("Failure", "Destination file is not configured.<br/>Check file and try again.", 44) {}
 			}
 		}
 		else
 		{
 			// dest file string was empty
+			dialog.message -b ("Failure", "No destination file was found.<br/>Check settings and try again.", 44) {}
 		}
 	}
 	
@@ -192,9 +222,25 @@ class("pmsimportexport::wgtmain","widget")
 							{
 								// database connect failed - output some message to user
 								debug -c "database connection failed!\n	source filename: @%leSourceFile->$text()\n	table name: @%o{strPMSTableName}";
+								dialog.message -b ("Failure", "Could not make database connection to source file: @%leSourceFile->$text()<br/>Check file and try again.", 44) {}
 							}
 						break;
 						} // end case
+						case ("Import from Source to Destination"):
+						{
+							// make connection to sqlite datasebase file as the DESTINATION
+							if (@$sqlConnect(@%leDestFile->$text()))
+							{
+								@$importSQLResults()
+							}
+							else
+							{
+								// database connect failed - output some message to user
+								debug -c "database connection failed!\n	dest filename: @%leSDestFile->$text()\n	table name: @%o{strPMSTableName}";
+								dialog.message -b ("Failure", "Could not make database connection to destination file: @%leDestFile->$text()<br/>Check file and try again.", 44) {}
+							}
+							break;
+						}
 					} // end switch
 					break;
 				} // end case
