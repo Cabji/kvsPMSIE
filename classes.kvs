@@ -1,13 +1,30 @@
 class("pmsimportexport::wgtmain","widget")
 {
+	function sqlFetchQuery()
+	{
+		%success = $false
+		%strSQLQuery = $0
+		
+		if (%strSQLQuery != "")
+		{
+			// check we have a destination filename and that we can create it
+			%success = @%sqlID->$queryExec(%strSQLQuery)
+			@%sqlID->$queryFirst()
+		}
+		else
+		{
+			// did not get a sql quey string passed to the function
+		}
+		
+		return %success
+	}
+	
 	function sqlConnect()
 	{
 		// $0 = filename of sqlite database
 		
 		%strSQLFile = $0
 		%success = $false
-		
-		debug -c strSQLFile: %strSQLFile
 		
 		if (%strSQLFile != "")
 		{
@@ -22,6 +39,53 @@ class("pmsimportexport::wgtmain","widget")
 		}
 		
 		return %success
+	}
+	
+	function exportSQLResults()
+	{
+		
+		%outFile = @%leDestFile->$text()
+		
+		if (%outFile != $null)
+		{
+			// wipe existing file if it exists, otherwise creates it
+			file.write %outFile "\n"
+			if ($file.exists(%outFile) == $true)
+			{
+				// dev-note: i use an array for the column names because when we get the results from the 
+				// database they come back in some random order. using an array lets us specify the 
+				// order of the columns. to alter the column names, edit the CSV string in the 
+				// wgtMain::constructor
+				%arrColNames = $str.split(",",@%o{strColNames})
+		
+				do {
+					%row = @%sqlID->$queryRecord()
+					%o .= "INSERT INTO @%o{strPMSTableName} VALUES("
+					foreach (%col, %arrColNames)
+					{
+						if ($isNumeric(%row{%col})) {%o .= %row{%col},;}
+						if ($isNumeric(%row{%col}) == $false && %row{%col} != "") {%o .= '%row{%col}',;}
+						if (%row{%col} == "") {%o .= NULL,;}
+					}
+					%o = $str.chop(%o,1)
+					%o .= ");\n"
+					file.write -a %outFile %o
+					%o = ""
+				}
+				while (@%sqlID->$queryNext())
+		
+				@%sqlID->$closeConnection("pmsdb")
+				dialog.message -b ("Finished", "The export process completed.", 43);
+			}
+			else
+			{
+				// dest file does not exist
+			}
+		}
+		else
+		{
+			// dest file string was empty
+		}
 	}
 	
 	function declareSignalsAndSlots(this function is where all the signal and slot connections are declared for this object)
@@ -116,29 +180,13 @@ class("pmsimportexport::wgtmain","widget")
 					{
 						case ("Export from Source to Destination"):
 						{
-							// dev-note: i use an array for the column names because when we get the results from the 
-							// database they come back in some random order. using an array lets us specify the 
-							// order of the columns. to alter the column names, edit the CSV string in the 
-							// wgtMain::constructor
-							%arrColNames = $str.split(",",@%o{strColNames})
 							// make connection to sqlite database file as the SOURCE
 							if (@$sqlConnect(@%leSourceFile->$text()))
 							{
-								// check we have a destination filename and that we can create it
-								@%sqlID->$queryExec("SELECT @%o{strColNames} FROM @%o{strPMSTableName}")
-								@%sqlID->$queryFirst()
-		
-								do {
-									%row = @%sqlID->$queryRecord()
-									foreach (%col, %arrColNames)
-									{
-										%o <, %row{%col}
-									}
-									debug %o
-									%o = ""
+								if (@$sqlFetchQuery("SELECT @%o{strColNames} FROM @%o{strPMSTableName}"))
+								{
+									@$exportSQLResults()
 								}
-								while (@%sqlID->$queryNext())
-								debug $keys(%row)
 							}
 							else
 							{
@@ -186,6 +234,14 @@ class("pmsimportexport::wgtmain","widget")
 		
 						if (%fileDest != $null && %objParent->$className() == "pmsimportexport::wgtMain")
 						{
+							if ($file.exists(%fileDest))
+							{
+								dialog.message -b ("Warning", "%fileDest already exists.<br/>If you export to this file, the contents will be overwritten!<br/>This is your last warning.", 318, "OK") {}
+							}
+							else
+							{
+								// create the file as it doesn't exist?
+							}
 							// we have the filename and the wgtMain object in objParent
 							%objParent->%leDestFile->$setText(%fileDest)
 						}
