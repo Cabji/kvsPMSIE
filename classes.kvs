@@ -1,0 +1,260 @@
+class("pmsimportexport::wgtmain","widget")
+{
+	function sqlConnect()
+	{
+		// $0 = filename of sqlite database
+		
+		%strSQLFile = $0
+		%success = $false
+		
+		debug -c strSQLFile: %strSQLFile
+		
+		if (%strSQLFile != "")
+		{
+			// create sql object
+			@%sqlID = $new(sql, $$, "wgtMain|sqlID")
+			// connect to database file
+			%success = @%sqlID->$setConnection(%strSQLFile, "pmsdb")
+		}
+		else
+		{
+			if (@%debug == $true) {debug -c "SQL Filename or DB table name was not passed to function. Check data.";}
+		}
+		
+		return %success
+	}
+	
+	function declareSignalsAndSlots(this function is where all the signal and slot connections are declared for this object)
+	{
+		objects.connect @%btnSourceFile	clicked $$ buttonClickedHandler
+		objects.connect @%btnDestFile	clicked $$ buttonClickedHandler
+		objects.connect @%btnActionLaunch clicked $$ buttonClickedHandler
+	}
+	
+	function constructor()
+	{
+		@$setWindowTitle("Plex Media Server Utility")
+		@$setGeometry(0,0,400,400)
+		@$centerToScreen()
+		
+		// class members
+		@%o{strPMSTableName} = "metadata_item_settings"
+		@%o{strColNames} = "id,account_id,guid,rating,view_offset,view_count,last_viewed_at,created_at,updated_at,skip_count,last_skipped_at,changed_at,extra_data,last_rated_at"
+		
+		// layout
+		@%l0 = $new(layout, $$)
+		
+		// child widgets
+		@%lblTitle = $new(label, $$)
+		@%lblTitle->$setText("<b>Plex Media Server Metadata Import/Export Utility</b><hr width=100%/>")
+		@%lblTitle->$setAlignment("Top","HCenter")
+		
+		@%lblSourceFile = $new(label, $$)
+		@%lblSourceFile->$setText("Source File: ")
+		@%leSourceFile = $new(lineedit, $$)
+		@%leSourceFile->$frame($true)
+		@%btnSourceFile = $new(button, $$, "wgtMain|btnSourceFile")
+		@%btnSourceFile->$setText("Browse...")
+		@%lblSourceFileSep = $new(label, $$)
+		@%lblSourceFileSep->$setText("<hr width=100%/>")
+		@%lblSourceFileSep->$setAlignment("Top")
+		
+		@%lblDestFile = $new(label, $$)
+		@%lblDestFile->$setText("Destination File: ")
+		@%leDestFile = $new(lineedit, $$)
+		@%leDestFile->$frame($true)
+		@%btnDestFile = $new(button, $$, "wgtMain|btnDestFile")
+		@%btnDestFile->$setText("Browse...")
+		@%lblDestFileSep = $new(label, $$)
+		@%lblDestFileSep->$setText("<hr width=100%/>")
+		@%lblDestFileSep->$setAlignment("Top")
+		
+		@%coboAction = $new(combobox, $$, "wgtMain|coboAction")
+		@%coboAction->$insertItem("Export from Source to Destination")
+		@%coboAction->$insertItem("Import from Source to Destination")
+		@%btnActionLaunch = $new(button, $$, "wgtMain|btnActionLaunch")
+		@%btnActionLaunch->$setText("LAUNCH")
+		
+		// apply child widgets to layout
+		@%l0->$addMultiCellWidget(@%lblTitle,			0,0,0,2)
+		@%l0->$addMultiCellWidget(@%lblSourceFile,		1,1,0,0)
+		@%l0->$addMultiCellWidget(@%leSourceFile,			1,1,1,1)
+		@%l0->$addMultiCellWidget(@%btnSourceFile,		1,1,2,2)
+		@%l0->$addMultiCellWidget(@%lblSourceFileSep,		2,2,0,2)
+		@%l0->$addMultiCellWidget(@%lblDestFile,			3,3,0,0)
+		@%l0->$addMultiCellWidget(@%leDestFile,			3,3,1,1)
+		@%l0->$addMultiCellWidget(@%btnDestFile,			3,3,2,2)
+		@%l0->$addMultiCellWidget(@%lblDestFileSep,		4,4,0,2)
+		@%l0->$addMultiCellWidget(@%coboAction,			5,5,0,1)
+		@%l0->$addMultiCellWidget(@%btnActionLaunch,		5,5,2,2)
+		
+		@%l0->$setRowStretch(0,1)
+		@%l0->$setRowStretch(1,2)
+		@%l0->$setRowStretch(2,1)
+		@%l0->$setRowStretch(3,1)
+		@%l0->$setRowStretch(4,1)
+		@%l0->$setRowStretch(5,1)
+		
+		// declare signals and slots
+		@$declareSignalsAndSlots()
+	}
+	
+	function buttonClickedHandler(this function handles button clicks for this object and its children)
+	{
+		%success = $false
+		%strSignalSenderName = @$signalSender->$name()
+		
+		if (%strSignalSenderName != $null)
+		{
+			switch (%strSignalSenderName)
+			{
+				case ("wgtMain|btnActionLaunch"):
+				{
+					// action button has been clicked - check which action
+					%action = @%coboAction->$current()
+					switch (%action)
+					{
+						case ("Export from Source to Destination"):
+						{
+							// dev-note: i use an array for the column names because when we get the results from the 
+							// database they come back in some random order. using an array lets us specify the 
+							// order of the columns. to alter the column names, edit the CSV string in the 
+							// wgtMain::constructor
+							%arrColNames = $str.split(",",@%o{strColNames})
+							// make connection to sqlite database file as the SOURCE
+							if (@$sqlConnect(@%leSourceFile->$text()))
+							{
+								// check we have a destination filename and that we can create it
+								@%sqlID->$queryExec("SELECT @%o{strColNames} FROM @%o{strPMSTableName}")
+								@%sqlID->$queryFirst()
+		
+								do {
+									%row = @%sqlID->$queryRecord()
+									foreach (%col, %arrColNames)
+									{
+										%o <, %row{%col}
+									}
+									debug %o
+									%o = ""
+								}
+								while (@%sqlID->$queryNext())
+								debug $keys(%row)
+							}
+							else
+							{
+								// database connect failed - output some message to user
+								debug -c "database connection failed!\n	source filename: @%leSourceFile->$text()\n	table name: @%o{strPMSTableName}";
+							}
+						break;
+						} // end case
+					} // end switch
+					break;
+				} // end case
+				case ("wgtMain|btnSourceFile"):
+				{
+					dialog.file ("Open", "Select Source File", "com.plexapp.plugins.library.db", "*.plugins.library.db*", $$)
+					{
+						// dialog callback
+						// $0 contains the path & filename the user selected
+						// $1 contains the wgtMain object, passed via magic parameter
+						%fileSource	= $0
+						%objParent	= $1
+		
+						if (%fileSource != $null && %objParent->$className() == "pmsimportexport::wgtMain")
+						{
+							// we have the filename and the wgtMain object in objParent
+							%objParent->%leSourceFile->$setText(%fileSource)
+						}
+						else
+						{
+							// user probably cancelled
+						}
+						
+					} // end dialog callback
+					%success = $true;
+					break;
+				}// end case
+				case ("wgtMain|btnDestFile"):
+				{
+					dialog.file ("Save", "Select where to save Destination File", "com.plexapp.plugins.library.db", "*.plugins.library.db*", $$)
+					{
+						// dialog callback
+						// $0 contains the path & filename the user selected
+						// $1 contains the wgtMain object, passed via magic parameter
+						%fileDest	= $0
+						%objParent	= $1
+		
+						if (%fileDest != $null && %objParent->$className() == "pmsimportexport::wgtMain")
+						{
+							// we have the filename and the wgtMain object in objParent
+							%objParent->%leDestFile->$setText(%fileDest)
+						}
+						else
+						{
+							// user probably cancelled
+						}
+						
+					}
+					%success = $true;
+					break;
+				}
+				default:
+				{
+					debug -c "A button was pressed, but we don't know which one it was. Look at pmsimportexport::wgtMain::buttonClickedHandler -> switch -> case entries to support this button.";
+				}
+			}
+		
+		}
+		else
+		{
+			if (@%debug == $true) {debug -c "The Signal Sender Name could not be obtained.";}
+		}
+		
+		return %success
+	}
+	
+}
+
+class("pmsimportexport::main","object")
+{
+	function showChild($0 - name of child widget to display)
+	{
+		%success = $false
+		if ($0 != "") {%strChildName = $0;}
+		if ($1 != "") {%strChildClass = $1;}
+		
+		if (%strChildName != $null)
+		{
+			// check if child widget name exists
+			%objChild = @$findChild(%strChildClass,%strChildName)
+			if ($typeOf(%objChild) == "hobject")
+			{
+				%objChild->$show()
+				%success = $true
+			}
+			else
+			{
+				if (@%debug == $true) {debug -c Object found by $findChild was not type hobject;}
+			}
+		}
+		else
+		{
+			if (@%debug == $true) {debug -c No widget name was passed in first argument;}
+		}
+		
+		return %success
+	}
+	
+	function constructor()
+	{
+		// class members
+		@%debug = $true
+		
+		// child widgets
+		@%wgtMain = $new("pmsimportexport::wgtMain", $$, "PMSIE Main")
+		
+		@$showChild("PMSIE Main")
+	}
+	
+}
+
