@@ -43,7 +43,7 @@ class("pmsimportexport::wgtmain","widget")
 	
 	function importSQLResults()
 	{
-		
+		%success = $false
 		%inFile = @%leSourceFile->$text()
 		
 		if (%inFile != $null)
@@ -55,7 +55,38 @@ class("pmsimportexport::wgtmain","widget")
 				// order of the columns. to alter the column names, edit the CSV string in the 
 				// wgtMain::constructor
 				%arrColNames = $str.split(",",@%o{strColNames})
-				
+				%intTotal	= 0
+				%intGood	= 0
+				%intFailed	= 0
+				%intBlank	= 0
+				%strGood = ""
+				%strFailed = ""
+				%fileID = $new(file)
+				%fileID->$setName(%inFile)
+				%fileID->$open("ReadOnly")
+				do {
+					%intTotal++
+					%line = %fileID->$readLine()
+					if (%line != "")
+					{
+						if (@%sqlID->$queryExec(%line))
+						{
+							%intGood++;
+							%strGood = %line
+						}
+						else 
+						{
+							%intFailed++;
+							%strFailed = %line
+						}
+					}
+					else {%intBlank++;}
+				}
+				while (%fileID->$atEnd() == $false)
+				debug "--- Stats ---\n	Total lines: %intTotal\n	Blank lines: %intBlank\n	Good: %intGood\n	Failed: %intFailed";
+				debug Good: %strGood\nFailed: %strFailed
+				%fileID->$close()
+				%success = $true
 			}
 			else
 			{
@@ -68,6 +99,8 @@ class("pmsimportexport::wgtmain","widget")
 			// dest file string was empty
 			dialog.message -b ("Failure", "No source file is configured.<br/>Check settings and try again.", 44) {}
 		}
+		
+		return %success
 	}
 	
 	function exportSQLResults()
@@ -93,7 +126,7 @@ class("pmsimportexport::wgtmain","widget")
 					{
 						if ($isNumeric(%row{%col})) {%o .= %row{%col},;}
 						if ($isNumeric(%row{%col}) == $false && %row{%col} != "") {%o .= '%row{%col}',;}
-						if (%row{%col} == "") {%o .= NULL,;}
+						if ($isNumeric(%row{%col}) == $false && %row{%col} == "") {%o .= NULL,;}
 					}
 					%o = $str.chop(%o,1)
 					%o .= ");\n"
@@ -101,8 +134,6 @@ class("pmsimportexport::wgtmain","widget")
 					%o = ""
 				}
 				while (@%sqlID->$queryNext())
-		
-				@%sqlID->$closeConnection("pmsdb")
 				dialog.message -b ("Finished", "The export process completed.", 43);
 			}
 			else
@@ -217,6 +248,7 @@ class("pmsimportexport::wgtmain","widget")
 								{
 									@$exportSQLResults()
 								}
+								@%sqlID->$closeConnection("pmsdb")
 							}
 							else
 							{
@@ -232,6 +264,7 @@ class("pmsimportexport::wgtmain","widget")
 							if (@$sqlConnect(@%leDestFile->$text()))
 							{
 								@$importSQLResults()
+								@%sqlID->$closeConnection("pmsdb")
 							}
 							else
 							{
@@ -282,7 +315,7 @@ class("pmsimportexport::wgtmain","widget")
 						{
 							if ($file.exists(%fileDest))
 							{
-								dialog.message -b ("Warning", "%fileDest already exists.<br/>If you export to this file, the contents will be overwritten!<br/>This is your last warning.", 318, "OK") {}
+								dialog.message -b ("Warning", "%fileDest already exists.<br/>If you <b>EXPORT</b> to this file, the contents will be overwritten!<br/>This is your last warning.", 318, "OK") {}
 							}
 							else
 							{
