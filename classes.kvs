@@ -64,10 +64,12 @@ class("pmsimportexport::wgtmain","widget")
 				%fileID = $new(file)
 				%fileID->$setName(%inFile)
 				%fileID->$open("ReadOnly")
+		
+				@%lblStatus->$setText("Importing to database...")
 				do {
 					%intTotal++
 					%line = %fileID->$readLine()
-					if (%line != "")
+					if (%line != "\n" && %line != "")
 					{
 						if (@%sqlID->$queryExec(%line))
 						{
@@ -83,9 +85,11 @@ class("pmsimportexport::wgtmain","widget")
 					else {%intBlank++;}
 				}
 				while (%fileID->$atEnd() == $false)
-				debug "--- Stats ---\n	Total lines: %intTotal\n	Blank lines: %intBlank\n	Good: %intGood\n	Failed: %intFailed";
-				debug Good: %strGood\nFailed: %strFailed
+		//		debug "--- Stats ---\n	Total lines: %intTotal\n	Blank lines: %intBlank\n	Good: %intGood\n	Failed: %intFailed";
+		//		debug Good: %strGood\nFailed: %strFailed
 				%fileID->$close()
+				@%lblStatus->$setText("")
+				dialog.message -b ("Finished", "Import completed.<br/><br/>%intGood entries inserted.<br/>%intFailed entries failed.<br/>%intBlank blank lines in file.", 43);
 				%success = $true
 			}
 			else
@@ -118,7 +122,8 @@ class("pmsimportexport::wgtmain","widget")
 				// order of the columns. to alter the column names, edit the CSV string in the 
 				// wgtMain::constructor
 				%arrColNames = $str.split(",",@%o{strColNames})
-		
+				%intCount = 0
+				@%lblStatus->$setText("Exporting from database...")
 				do {
 					%row = @%sqlID->$queryRecord()
 					%o .= "INSERT INTO @%o{strPMSTableName} VALUES("
@@ -132,9 +137,11 @@ class("pmsimportexport::wgtmain","widget")
 					%o .= ");\n"
 					file.write -a %outFile %o
 					%o = ""
+					%intCount++
 				}
 				while (@%sqlID->$queryNext())
-				dialog.message -b ("Finished", "The export process completed.", 43);
+				@%lblStatus->$setText("")
+				dialog.message -b ("Finished", "Export completed.<br/><br/>%intCount records exported.", 43);
 			}
 			else
 			{
@@ -159,7 +166,7 @@ class("pmsimportexport::wgtmain","widget")
 	function constructor()
 	{
 		@$setWindowTitle("Plex Media Server Utility")
-		@$setGeometry(0,0,400,400)
+		@$setGeometry(0,0,400,150)
 		@$centerToScreen()
 		
 		// class members
@@ -200,6 +207,9 @@ class("pmsimportexport::wgtmain","widget")
 		@%btnActionLaunch = $new(button, $$, "wgtMain|btnActionLaunch")
 		@%btnActionLaunch->$setText("LAUNCH")
 		
+		@%lblStatus = $new(label, $$, "wgtMain|lblStatus")
+		@%lblStatus->$setAlignment(Bottom, Left)
+		
 		// apply child widgets to layout
 		@%l0->$addMultiCellWidget(@%lblTitle,			0,0,0,2)
 		@%l0->$addMultiCellWidget(@%lblSourceFile,		1,1,0,0)
@@ -212,6 +222,7 @@ class("pmsimportexport::wgtmain","widget")
 		@%l0->$addMultiCellWidget(@%lblDestFileSep,		4,4,0,2)
 		@%l0->$addMultiCellWidget(@%coboAction,			5,5,0,1)
 		@%l0->$addMultiCellWidget(@%btnActionLaunch,		5,5,2,2)
+		@%l0->$addMultiCellWidget(@%lblStatus,			6,6,0,2)
 		
 		@%l0->$setRowStretch(0,1)
 		@%l0->$setRowStretch(1,2)
@@ -279,7 +290,7 @@ class("pmsimportexport::wgtmain","widget")
 				} // end case
 				case ("wgtMain|btnSourceFile"):
 				{
-					dialog.file ("Open", "Select Source File", "com.plexapp.plugins.library.db", "*.plugins.library.db*", $$)
+					dialog.file ("Open", "Select Source File", "com.plexapp.plugins.library.db", "Plex Database File (*.plugins.library.db*);;Any File (*.*)", $$)
 					{
 						// dialog callback
 						// $0 contains the path & filename the user selected
@@ -303,7 +314,7 @@ class("pmsimportexport::wgtmain","widget")
 				}// end case
 				case ("wgtMain|btnDestFile"):
 				{
-					dialog.file ("Save", "Select where to save Destination File", "com.plexapp.plugins.library.db", "*.plugins.library.db*", $$)
+					dialog.file ("Save", "Select Destination File", "com.plexapp.plugins.library.db", "Plex Database File (*.plugins.library.db*);;Any File (*.*)", $$)
 					{
 						// dialog callback
 						// $0 contains the path & filename the user selected
@@ -382,6 +393,34 @@ class("pmsimportexport::main","object")
 	
 	function constructor()
 	{
+		/* Plex Media Server metadata settings import/export tool
+		
+			Author: cabji
+			Date: 20200603
+		
+			This script provides a GUI to easily export metadata from your Plex Media Server database file. 
+			It is useful if or when you need to reinstall your PMS, or you create a new PMS and want to retain 
+			or restore the metadata of your media. Metadata here means the "watch data" for the media items, 
+			so that the PMS knows where to resume watching if you stopped an item midway through viewing, 
+			or if you have watched or not watched a movie or tv episode etc.
+		
+			This utility makes it easier to do the process described at: 
+			https://support.plex.tv/articles/201154527-move-viewstate-ratings-from-one-install-to-another/
+			especially for Windows users. It offers a point and click approach.
+		
+			I tried to add some nice progress bars when the utility does the import and export of the data, 
+			but for some reason the widgets don't update correctly in realtime and I couldn't work out how 
+			to fix it. If you click the LAUNCH button and it seems to be doing nothing or KVIrc goes into 
+			"Not Responding" just wait it out and a dialog will tell you when the process is finished.
+		
+			To run this script, in KVIrc press Ctrl + Shift + X, select the classes.kvs file.
+			Then press Ctrl + Shift + S to open script tester and tpye in: 
+			
+				%kvsApp = $new(pmsimportexport::main)
+		
+			Then press the Execute button.
+		*/
+		
 		// class members
 		@%debug = $true
 		
